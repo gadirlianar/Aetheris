@@ -1,0 +1,85 @@
+[project]
+name = "aetheris"
+version = "0.1.0"
+description = "Claim-level verifiable multi-agent deep research engine over scientific literature."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Anar Gadirli", email = "anargadirli55@gmail.com" }]
+keywords = ["llm", "agents", "rag", "fact-verification", "deep-research", "evaluation"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "google-genai>=2.30.1",
+    "httpx>=0.28",
+    "networkx>=3.4",
+    "numpy>=2.1",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "rich>=13.9",
+    "typer>=0.15",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.scripts]
+aetheris = "aetheris.cli:app"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "respx>=0.22",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/src/aetheris"]
+
+[tool.hatch.build.targets.editable]
+dev-mode-exact = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: hits real external APIs (needs network and GEMINI_API_KEY)"]
+addopts = "-m 'not integration'"
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["backend/src", "backend/tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PT", "C4", "PIE", "RET"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["PT011"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "backend/src"
+packages = ["aetheris"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["respx.*", "networkx", "networkx.*"]
+ignore_missing_imports = true
+

@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AETHERIS_RETRIEVAL_MODE=graph_hybrid
+      - AETHERIS_MAX_SKEPTIC_ROUNDS=1
+    volumes:
+      - aetheris-data:/app/.aetheris
+
+  web:
+    image: node:22-alpine
+    working_dir: /app/frontend
+    volumes:
+      - ./frontend:/app/frontend
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm run build && npm run start"
+    depends_on:
+      - api
+
+volumes:
+  aetheris-data:
