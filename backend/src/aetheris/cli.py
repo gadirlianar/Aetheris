@@ -98,7 +98,9 @@ def research(
             )
         else:
             result = asyncio.run(
-                run_research(question, settings=settings, trace_store=store, on_event=_live_printer)
+                run_research(
+                    question, settings=settings, trace_store=store, on_event=_live_printer
+                )
             )
     finally:
         store.close()

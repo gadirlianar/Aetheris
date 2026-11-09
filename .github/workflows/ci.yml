@@ -46,3 +46,4 @@ jobs:
         run: npm run typecheck
       - name: Build Next.js Bundle
         run: npm run build
+

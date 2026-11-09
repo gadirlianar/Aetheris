@@ -43,7 +43,9 @@ def compute_metrics(state: ResearchState) -> VerificationMetrics:
     cit_acc = (
         sum(bool(c.decisive_evidence_cited) for c in decided) / len(decided) if decided else 0.0
     )
-    inv = sum(len(s.invalid_citations) for s in state.draft.iter_sentences()) if state.draft else 0
+    inv = (
+        sum(len(s.invalid_citations) for s in state.draft.iter_sentences()) if state.draft else 0
+    )
     return VerificationMetrics(
         total_claims=n,
         supported=sup,
@@ -107,7 +109,7 @@ def render_markdown(state: ResearchState) -> str:
                     p = state.papers.get(span.paper_id)
                     who = p.short_citation() if p else span.paper_id
                     lines.append(
-                        f"    - [{ref(span.paper_id)}] ({who}, chars "
+                        f'    - [{ref(span.paper_id)}] ({who}, chars '
                         f'{span.char_start}–{span.char_end}, {span.match}): "{span.quote}"'
                     )
                 if verdict is not Verdict.SUPPORTED and claim.rationale:

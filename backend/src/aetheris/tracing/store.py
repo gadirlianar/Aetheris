@@ -136,3 +136,4 @@ class TraceStore:
             (run_id, node),
         ).fetchone()
         return json.loads(row["snapshot"]) if row else None
+

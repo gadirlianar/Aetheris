@@ -29,3 +29,4 @@ web:
 
 check: lint typecheck test
 	cd frontend && npm run build
+

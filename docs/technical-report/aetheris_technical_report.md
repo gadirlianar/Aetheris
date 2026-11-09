@@ -117,3 +117,4 @@ uv run pytest -v --cov=aetheris
 3. Wadden, D., Lin, S., Lo, K., et al. (2020). *Fact or Fiction: Verifying Scientific Claims*. EMNLP. `arxiv:2004.14906`
 4. Edge, D., Trinh, H., Cheng, N., et al. (2024). *From Local to Global: A Graph RAG Approach to Query-Focused Summarization*. `arxiv:2404.16130`
 5. Cormack, G. V., Clarke, C. L., & Büttcher, S. (2009). *Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods*. SIGIR.
+

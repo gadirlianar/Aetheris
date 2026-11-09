@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Aetheris in your research, academic evaluation, or portfolio, please cite it as below."
+title: "Aetheris: Claim-Level Verifiable Multi-Agent Deep Research Engine over Scientific Literature"
+abstract: "An autonomous, multi-agent scientific research engine featuring 3-way Hybrid + GraphRAG retrieval, 3-pass mechanical quote grounding, and an adversarial Skeptic self-correction loop."
+authors:
+  - family-names: "Gadirli"
+    given-names: "Anar"
+    email: "anargadirli55@gmail.com"
+version: 0.1.0
+date-released: 2026-11-09
+license: "MIT"
+repository-code: "https://github.com/anargadirli/aetheris"
+keywords:
+  - "large-language-models"
+  - "multi-agent-systems"
+  - "retrieval-augmented-generation"
+  - "graphrag"
+  - "fact-verification"
+  - "mechanistic-grounding"
+  - "evaluation-harness"

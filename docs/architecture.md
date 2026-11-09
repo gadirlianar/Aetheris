@@ -116,3 +116,4 @@ Post-hoc LLM verifiers frequently "support" claims by generating plausible parap
    Computes contiguous matching blocks between normalized $q'$ and $T'$ using `SequenceMatcher(autojunk=False)`. Accepts the span only if character coverage $\ge 0.90$ within a window of length $\le 1.25 |q'|$, tolerating minor hyphenation or punctuation differences while rejecting paraphrases.
 
 If a verifier outputs `SUPPORTED` or `REFUTED` and **none** of its quotes pass any of the 3 passes, the verdict is mechanically downgraded to `NOT_ENOUGH_INFO` with `grounding_failed = True`.
+

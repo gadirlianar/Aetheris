@@ -214,3 +214,4 @@ export interface BenchmarkSummary {
   calibration_bins: CalibrationBin[];
   predictions: ExamplePrediction[];
 }
+

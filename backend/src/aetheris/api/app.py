@@ -290,3 +290,4 @@ def create_app(settings: Settings | None = None, *, seed_demo: bool = True) -> F
 
 
 app = create_app()
+

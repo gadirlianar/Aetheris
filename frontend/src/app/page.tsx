@@ -108,6 +108,25 @@ function verdictBadge(verdict: Verdict | null) {
 
 export default function AetherisDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("Inspector");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get("tab") as ActiveTab | null;
+      if (t && ["Inspector", "Pipeline", "GraphRAG", "Benchmark"].includes(t)) {
+        setActiveTab(t);
+      }
+    }
+  }, []);
+
+  const handleTabChange = (t: ActiveTab) => {
+    setActiveTab(t);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", t);
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
   const [run, setRun] = useState<RunPayload>(FALLBACK_RUN);
   const [presets, setPresets] = useState<PresetQuestion[]>(FALLBACK_PRESETS);
   const [evals, setEvals] = useState<BenchmarkSummary[]>(FALLBACK_EVALS);
@@ -604,7 +623,7 @@ export default function AetherisDashboard() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition ${
                   active
                     ? "border border-cyan-500/50 bg-cyan-500/15 text-cyan-200 shadow-sm"
@@ -1509,3 +1528,4 @@ export default function AetherisDashboard() {
     </div>
   );
 }
+
