@@ -45,7 +45,7 @@ Includes a side-by-side character-span highlighter (`char_start`–`char_end`), 
 
 Best of all: anyone can clone the repo and run the full pipeline, CLI, benchmarks, and web dashboard offline in under 5 seconds with zero API keys required (`--demo` mode).
 
-💻 GitHub Repository (Open Source, MIT): https://github.com/anargadirli/aetheris
+💻 GitHub Repository (Open Source, MIT): https://github.com/gadirlianar/Aetheris
 📄 arXiv-Style Technical Report: `docs/technical-report/aetheris_technical_report.md`
 
 I'd love to hear feedback from AI researchers, retrieval engineers, and agent builders!

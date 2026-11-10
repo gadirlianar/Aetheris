@@ -93,7 +93,7 @@ See [**Section 4 of the Technical Report (`docs/technical-report/aetheris_techni
 Requires **Python 3.12+** (managed automatically via [`uv`](https://docs.astral.sh/uv/)) and **Node.js 20+** for the dashboard.
 
 ```bash
-git clone https://github.com/anargadirli/aetheris.git
+git clone https://github.com/gadirlianar/Aetheris.git
 cd aetheris
 make install
 ```
