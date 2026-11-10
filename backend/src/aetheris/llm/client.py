@@ -159,4 +159,3 @@ class TieredLLMRouter:
             tier=resolved_tier,
             cost_usd=cost,
         )
-
