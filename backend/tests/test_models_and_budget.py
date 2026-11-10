@@ -108,4 +108,3 @@ async def test_event_bus_and_contextvar() -> None:
     assert ev.seq == 1
     assert ev.node == "verify"
     assert received[0].data["message"] == "checking claims"
-

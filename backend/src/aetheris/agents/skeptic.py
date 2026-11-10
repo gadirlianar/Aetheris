@@ -1,12 +1,16 @@
-"""Adversarial Skeptic (Devil's Advocate) agent.
+"""Adversarial Skeptic (Devil's Advocate) agent with concurrent batch critique.
 
 Audits verified claims for refutations, ungrounded assertions, or low confidence.
-When challenged claims are found and the Skeptic budget allows another round, it
-generates targeted literature queries and routes the state machine back to
-``retrieve -> synthesize -> extract_claims -> verify``.
+When many claims are challenged, batches are audited concurrently under
+``asyncio.Semaphore(ctx.settings.max_concurrent_claims)`` and a token-bucket rate
+limiter. When challenged claims are found and the Skeptic budget allows another
+round, it generates targeted literature queries and routes the state machine back
+to ``retrieve -> synthesize -> extract_claims -> verify``.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 from pydantic import BaseModel
 
@@ -20,6 +24,7 @@ from aetheris.core.models import (
     SkepticIssue,
     Verdict,
 )
+from aetheris.llm.client import TokenBucketRateLimiter
 
 
 class _IssueOut(BaseModel):
@@ -64,35 +69,56 @@ class Skeptic:
                 }
             )
 
-        claim_lines = [
-            f"[{c.id}] (verdict={c.verdict.value if c.verdict else 'unknown'}, "
-            f"confidence={c.confidence if c.confidence is not None else 'n/a'}): {c.text} "
-            f"(verifier note: {c.rationale or 'none'})"
-            for c in challenged
-        ]
-        result = await ctx.llm.generate_structured(
-            system=prompts.SKEPTIC_SYSTEM,
-            prompt=prompts.SKEPTIC_USER.format(
-                question=state.question, claims="\n".join(claim_lines)
-            ),
-            schema=SkepticOut,
-            purpose="skeptic",
+        max_conc = max(1, ctx.settings.max_concurrent_claims)
+        semaphore = asyncio.Semaphore(max_conc)
+        limiter = TokenBucketRateLimiter(
+            rate_per_sec=ctx.settings.rate_limit_rps,
+            capacity=ctx.settings.rate_limit_burst,
         )
+        batch_size = max(4, max_conc)
+        batches = [challenged[i : i + batch_size] for i in range(0, len(challenged), batch_size)]
+
+        async def critique_batch(batch_claims: list[Claim]) -> SkepticOut:
+            claim_lines = [
+                f"[{c.id}] (verdict={c.verdict.value if c.verdict else 'unknown'}, "
+                f"confidence={c.confidence if c.confidence is not None else 'n/a'}): {c.text} "
+                f"(verifier note: {c.rationale or 'none'})"
+                for c in batch_claims
+            ]
+            async with semaphore:
+                await limiter.acquire(1.0)
+                res = await ctx.llm.generate_structured(
+                    system=prompts.SKEPTIC_SYSTEM,
+                    prompt=prompts.SKEPTIC_USER.format(
+                        question=state.question, claims="\n".join(claim_lines)
+                    ),
+                    schema=SkepticOut,
+                    purpose="skeptic",
+                    tier="reasoning",
+                )
+                return res.value
+
+        batch_outputs = await asyncio.gather(*(critique_batch(b) for b in batches))
 
         notes_by_id: dict[str, str] = {}
         issues: list[SkepticIssue] = []
         counter_queries: list[str] = []
+        summaries: list[str] = []
         valid_ids = {c.id for c in challenged}
-        for item in result.value.issues:
-            cid = item.claim_id.strip().strip("[]")
-            if cid not in valid_ids:
-                continue
-            issue_text = item.issue.strip()
-            query = item.counter_query.strip()
-            notes_by_id[cid] = issue_text
-            issues.append(SkepticIssue(claim_id=cid, issue=issue_text, counter_query=query))
-            if query and query not in state.executed_queries and query not in counter_queries:
-                counter_queries.append(query)
+
+        for out in batch_outputs:
+            if out.summary.strip():
+                summaries.append(out.summary.strip())
+            for item in out.issues:
+                cid = item.claim_id.strip().strip("[]")
+                if cid not in valid_ids:
+                    continue
+                issue_text = item.issue.strip()
+                query = item.counter_query.strip()
+                notes_by_id[cid] = issue_text
+                issues.append(SkepticIssue(claim_id=cid, issue=issue_text, counter_query=query))
+                if query and query not in state.executed_queries and query not in counter_queries:
+                    counter_queries.append(query)
 
         updated_claims: list[Claim] = [
             c.model_copy(update={"skeptic_notes": notes_by_id[c.id]}) if c.id in notes_by_id else c
@@ -107,7 +133,7 @@ class Skeptic:
 
         critique = SkepticCritique(
             round=next_round,
-            summary=result.value.summary.strip(),
+            summary=" ".join(summaries) or f"Challenged {len(challenged)} claim(s).",
             requires_revision=requires_revision,
             issues=issues,
             counter_queries=counter_queries[:4],
@@ -119,7 +145,7 @@ class Skeptic:
                 + (
                     f"triggering revision round {next_round}"
                     if requires_revision
-                    else "proceeding to final report"
+                    else "proceeding to contradiction & consensus synthesis"
                 )
             ),
             challenged=len(challenged),

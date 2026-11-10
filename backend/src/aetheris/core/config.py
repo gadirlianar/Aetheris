@@ -15,11 +15,13 @@ class Settings(BaseSettings):
         env_prefix="AETHERIS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # --- models
+    # --- models & tiered routing
     gemini_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("GEMINI_API_KEY", "AETHERIS_GEMINI_API_KEY")
     )
     llm_model: str = "gemini-3.8-flash"
+    fast_model: str = "gemini-3.5-flash-lite"
+    reasoning_model: str = "gemini-3.8-flash"
     thinking_level: str | None = "low"
     embedding_model: str = "gemini-embedding-2"
     embedding_dim: int = 768
@@ -34,7 +36,7 @@ class Settings(BaseSettings):
     papers_per_query: int = 8
     source_timeout_s: float = 30.0
 
-    # --- research & verification shape
+    # --- research, verification & concurrency shape
     retrieval_mode: RetrievalMode = "graph_hybrid"
     enable_grounding_guard: bool = True
     max_skeptic_rounds: int = 1
@@ -44,11 +46,15 @@ class Settings(BaseSettings):
     evidence_per_sub_question: int = 8
     evidence_per_claim: int = 6
     llm_concurrency: int = 8
+    max_concurrent_claims: int = 5
+    rate_limit_rps: float = 25.0
+    rate_limit_burst: int = 10
 
-    # --- budget
+    # --- budget & cost limits
     max_llm_calls: int = 200
     max_total_tokens: int = 2_000_000
     max_seconds: float = 900.0
+    max_cost_usd: float = 5.0
 
     # --- storage
     data_dir: Path = Path(".aetheris")

@@ -73,6 +73,7 @@ class Synthesizer:
             ),
             schema=DraftOut,
             purpose="synthesize",
+            tier="reasoning",
         )
 
         sections: list[ReportSection] = []

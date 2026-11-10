@@ -93,3 +93,4 @@ I'd love to hear feedback from AI researchers, retrieval engineers, and agent bu
   Show the Adversarial Skeptic audit log: explain how the Skeptic challenged an overgeneralized statement about 100% citation entailment, queried for counter-evidence, and forced the Synthesizer to revise the draft with qualifiers before finalizing.
 - **01:15–01:30 (GraphRAG Explorer & Ablation Suite):**  
   Click the **GraphRAG tab** to show the interactive SVG knowledge graph and Personalized PageRank bridges. Switch to the **Benchmark tab** to show the 5-way ablation matrix (`aetheris eval`), demonstrating how each architectural component contributes to 100% Macro-F1. Close with GitHub link.
+

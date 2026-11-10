@@ -52,6 +52,7 @@ class _MockAioInteractions:
         item = self._responses.pop(0)
         if isinstance(item, Exception):
             raise item
+        assert isinstance(item, _MockInteraction)
         return item
 
 

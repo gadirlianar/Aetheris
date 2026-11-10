@@ -239,6 +239,12 @@ class KnowledgeGraphIndex:
                 self._graph.add_node(
                     pnode, label=paper.short_citation(), kind="paper", paper_id=pid
                 )
+                for tent in extract_entities(paper.title, max_entities=10):
+                    enode = f"entity:{tent}"
+                    if not self._graph.has_node(enode):
+                        self._graph.add_node(enode, label=tent, kind="entity", paper_id=None)
+                    self._entity_df[tent] += 1
+                    self._graph.add_edge(pnode, enode, relation="titled", weight=2.2)
 
         for chunk in chunks:
             cnode = f"chunk:{chunk.id}"
@@ -251,10 +257,9 @@ class KnowledgeGraphIndex:
                     pnode, label=chunk.paper_id, kind="paper", paper_id=chunk.paper_id
                 )
             self._graph.add_node(cnode, label=chunk.id, kind="chunk", paper_id=chunk.paper_id)
-            self._graph.add_edge(pnode, cnode, relation="contains", weight=1.0)
+            self._graph.add_edge(pnode, cnode, relation="contains", weight=1.8)
 
-            title = self._paper_titles.get(chunk.paper_id, "")
-            entities = extract_entities(f"{title}. {chunk.text}")
+            entities = extract_entities(chunk.text)
             for ent in entities:
                 enode = f"entity:{ent}"
                 if not self._graph.has_node(enode):

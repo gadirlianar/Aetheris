@@ -75,6 +75,11 @@ const PIPELINE_NODES = [
     subtitle: "Contradiction & Gap Audit Loop",
   },
   {
+    id: "contradiction",
+    label: "Consensus & Contradiction Synthesizer",
+    subtitle: "Authority-Weighted Conflict Resolution (Citations + Recency + Venue)",
+  },
+  {
     id: "render",
     label: "Renderer",
     subtitle: "Annotated Brief & Calibration Metrics",
@@ -772,6 +777,108 @@ export default function AetherisDashboard() {
                   ))}
                 </div>
               </div>
+
+              {/* Scientific Disagreement & Consensus Analysis */}
+              {run.state.conflicts && run.state.conflicts.length > 0 && (
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-900/40 p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                        Authority-Weighted Conflict Resolution Engine
+                      </span>
+                      <h3 className="mt-1 text-base font-bold text-white">
+                        Scientific Disagreement & Consensus Analysis (
+                        {run.state.conflicts.length} Resolved)
+                      </h3>
+                    </div>
+                    <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-mono text-[11px] text-amber-300">
+                      W(p) = 0.45·Cite + 0.30·Recency + 0.25·Venue
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    {run.state.conflicts.map((conf) => (
+                      <div
+                        key={conf.id}
+                        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-bold text-amber-300">
+                              {conf.id} · Claims {conf.claim_ids.join(", ")}
+                            </span>
+                            <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[11px] uppercase text-cyan-300">
+                              {conf.consensus_verdict.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="font-mono text-xs text-slate-300">
+                            Authority Balance:{" "}
+                            <span className="text-emerald-400 font-bold">
+                              W+ {conf.support_authority_weight.toFixed(3)}
+                            </span>{" "}
+                            vs{" "}
+                            <span className="text-rose-400 font-bold">
+                              W- {conf.counter_authority_weight.toFixed(3)}
+                            </span>{" "}
+                            · Δt={conf.recency_gap_years}y · Ratio{" "}
+                            {conf.citation_ratio.toFixed(1)}x
+                          </div>
+                        </div>
+
+                        <p className="text-xs font-semibold text-white">
+                          {conf.topic}
+                        </p>
+
+                        <p className="text-xs leading-relaxed text-slate-300">
+                          {conf.synthesis}
+                        </p>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-[11px]">
+                          <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/15 p-2.5">
+                            <div className="font-semibold text-emerald-300 mb-1">
+                              Supporting Literature ({conf.supporting_sources.length})
+                            </div>
+                            {conf.supporting_sources.map((src) => (
+                              <div
+                                key={src.paper_id}
+                                className="font-mono text-slate-300 flex items-center justify-between py-0.5"
+                              >
+                                <span>
+                                  {src.citation_label} ({src.venue ?? "n/a"},{" "}
+                                  {src.citation_count ?? 0} cites)
+                                </span>
+                                <span className="text-emerald-400 font-bold">
+                                  W={src.authority_score.toFixed(3)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="rounded-lg border border-rose-500/20 bg-rose-950/15 p-2.5">
+                            <div className="font-semibold text-rose-300 mb-1">
+                              Qualifying / Counter Literature ({conf.counter_sources.length})
+                            </div>
+                            {conf.counter_sources.map((src) => (
+                              <div
+                                key={src.paper_id}
+                                className="font-mono text-slate-300 flex items-center justify-between py-0.5"
+                              >
+                                <span>
+                                  {src.citation_label} ({src.venue ?? "n/a"},{" "}
+                                  {src.citation_count ?? 0} cites)
+                                </span>
+                                <span className="text-rose-400 font-bold">
+                                  W={src.authority_score.toFixed(3)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Right 5 columns: Mechanical Quote Grounding & Abstract Offset Inspector */}
@@ -1135,6 +1242,70 @@ export default function AetherisDashboard() {
                   ))}
                 </div>
               </div>
+
+              {/* Tiered Model Routing & Cost/Latency Telemetry */}
+              {run.state.cost_telemetry && (
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-900/40 p-6">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-emerald-400">
+                      <Activity className="h-4 w-4" />
+                      Tiered Model Routing & Cost/Latency Telemetry
+                    </h3>
+                    <span className="font-mono text-xs font-bold text-emerald-300">
+                      ${run.state.cost_telemetry.total_cost_usd.toFixed(6)} USD
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
+                    {Object.entries(run.state.cost_telemetry.tier_usage).map(
+                      ([tier, usage]) => (
+                        <div
+                          key={tier}
+                          className="rounded-xl border border-slate-800 bg-slate-950/80 p-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[11px] font-bold uppercase text-cyan-300">
+                              {tier} tier
+                            </span>
+                            <span className="font-mono text-[11px] text-emerald-300">
+                              ${usage.cost_usd.toFixed(6)}
+                            </span>
+                          </div>
+                          <div className="mt-1 font-mono text-[11px] text-slate-400">
+                            {usage.calls} calls ·{" "}
+                            {usage.total_tokens.toLocaleString()} tok
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  <div className="mt-3 space-y-1.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Per-Node Latency Percentiles (p50 / p95 / p99)
+                    </div>
+                    <div className="divide-y divide-slate-800/70 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-1 font-mono text-[11px]">
+                      {Object.entries(
+                        run.state.cost_telemetry.node_latencies
+                      ).map(([nodeName, lat]) => (
+                        <div
+                          key={nodeName}
+                          className="flex items-center justify-between py-1.5"
+                        >
+                          <span className="text-indigo-300 font-semibold">
+                            {nodeName} ({lat.count}x)
+                          </span>
+                          <span className="text-slate-300">
+                            p50: {lat.p50_ms.toFixed(1)}ms · p95:{" "}
+                            {lat.p95_ms.toFixed(1)}ms · p99:{" "}
+                            {lat.p99_ms.toFixed(1)}ms
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1345,7 +1516,9 @@ export default function AetherisDashboard() {
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400">
-                    Reproducible Scientific Benchmark (`aetheris eval`)
+                    Reproducible Scientific Benchmark (`aetheris eval` · N=
+                    {activeBenchmark.total_examples} Adversarial Claims · 1,000x
+                    Bootstrap 95% CIs)
                   </span>
                   <h2 className="mt-1 text-lg font-bold text-white">
                     5-Way Retrieval & Mechanical Grounding Ablation Study
@@ -1354,8 +1527,8 @@ export default function AetherisDashboard() {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <Activity className="h-4 w-4 text-emerald-400" />
-                  Click any row to inspect its calibration curve & per-claim
-                  predictions
+                  Click any row to inspect its confusion matrix, error taxonomy &
+                  per-claim predictions
                 </div>
               </div>
 
@@ -1366,8 +1539,12 @@ export default function AetherisDashboard() {
                       <th className="py-3 pr-4">Configuration</th>
                       <th className="px-3 py-3">Retrieval</th>
                       <th className="px-3 py-3 text-center">Quote Guard</th>
-                      <th className="px-3 py-3 text-right">Verdict Acc</th>
-                      <th className="px-3 py-3 text-right">Macro-F1</th>
+                      <th className="px-3 py-3 text-right">
+                        Verdict Acc (95% CI)
+                      </th>
+                      <th className="px-3 py-3 text-right">
+                        Macro-F1 (95% CI)
+                      </th>
                       <th className="px-3 py-3 text-right">Recall@K</th>
                       <th className="px-3 py-3 text-right">MRR</th>
                       <th className="px-3 py-3 text-right">Mean Span IoU</th>
@@ -1417,11 +1594,27 @@ export default function AetherisDashboard() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-3.5 text-right font-mono font-semibold">
-                            {(s.verdict_accuracy * 100).toFixed(1)}%
+                          <td className="px-3 py-3.5 text-right font-mono">
+                            <div className="font-semibold">
+                              {(s.verdict_accuracy * 100).toFixed(1)}%
+                            </div>
+                            {s.accuracy_ci_95 && (
+                              <div className="text-[10px] text-slate-400">
+                                [{(s.accuracy_ci_95[0] * 100).toFixed(1)}%,{" "}
+                                {(s.accuracy_ci_95[1] * 100).toFixed(1)}%]
+                              </div>
+                            )}
                           </td>
-                          <td className="px-3 py-3.5 text-right font-mono font-bold text-emerald-400">
-                            {(s.verdict_macro_f1 * 100).toFixed(1)}%
+                          <td className="px-3 py-3.5 text-right font-mono">
+                            <div className="font-bold text-emerald-400">
+                              {(s.verdict_macro_f1 * 100).toFixed(1)}%
+                            </div>
+                            {s.macro_f1_ci_95 && (
+                              <div className="text-[10px] text-emerald-300/70">
+                                [{(s.macro_f1_ci_95[0] * 100).toFixed(1)}%,{" "}
+                                {(s.macro_f1_ci_95[1] * 100).toFixed(1)}%]
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-3.5 text-right font-mono">
                             {(s.retrieval_recall_at_k * 100).toFixed(1)}%
@@ -1439,7 +1632,7 @@ export default function AetherisDashboard() {
                             {s.brier_score.toFixed(3)}
                           </td>
                           <td className="pl-3 py-3.5 text-right font-mono font-bold text-amber-300">
-                            {s.hallucinations_caught}/2
+                            {s.hallucinations_caught}/5
                           </td>
                         </tr>
                       );
@@ -1447,6 +1640,96 @@ export default function AetherisDashboard() {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* 3x3 Confusion Matrix & Error Taxonomy Breakdown */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {activeBenchmark.confusion_matrix && (
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-900/40 p-6 lg:col-span-6">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400">
+                    3×3 Verdict Confusion Matrix ({activeBenchmark.config_name})
+                  </span>
+                  <h3 className="mt-1 text-base font-bold text-white">
+                    Gold Label vs. Predicted Entailment Verdict
+                  </h3>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[11px] uppercase text-slate-400">
+                          <th className="py-2 pr-3">Gold \ Pred</th>
+                          <th className="px-3 py-2 text-right text-emerald-300">
+                            supported
+                          </th>
+                          <th className="px-3 py-2 text-right text-rose-300">
+                            refuted
+                          </th>
+                          <th className="pl-3 py-2 text-right text-amber-300">
+                            not_enough_info
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/70">
+                        {(
+                          ["supported", "refuted", "not_enough_info"] as const
+                        ).map((gold) => {
+                          const row =
+                            activeBenchmark.confusion_matrix?.[gold] ?? {};
+                          return (
+                            <tr key={gold}>
+                              <td className="py-2.5 pr-3 font-semibold text-slate-200">
+                                {gold}
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-slate-300">
+                                {row.supported ?? 0}
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-slate-300">
+                                {row.refuted ?? 0}
+                              </td>
+                              <td className="pl-3 py-2.5 text-right text-slate-300">
+                                {row.not_enough_info ?? 0}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeBenchmark.error_taxonomy && (
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-900/40 p-6 lg:col-span-6">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-rose-400">
+                    Failure Mode Diagnostics ({activeBenchmark.config_name})
+                  </span>
+                  <h3 className="mt-1 text-base font-bold text-white">
+                    Error Taxonomy & Residual Failure Distribution
+                  </h3>
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {Object.entries(activeBenchmark.error_taxonomy).map(
+                      ([bucket, count]) => (
+                        <div
+                          key={bucket}
+                          className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/75 px-3.5 py-2.5 font-mono text-xs"
+                        >
+                          <span className="text-slate-300">
+                            {bucket.replace(/_/g, " ")}
+                          </span>
+                          <span
+                            className={`rounded px-2 py-0.5 font-bold ${
+                              count > 0
+                                ? "bg-rose-500/20 text-rose-300"
+                                : "bg-emerald-500/15 text-emerald-300"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Per-Claim Predictions for Selected Ablation Config */}

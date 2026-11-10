@@ -53,3 +53,4 @@ uv run aetheris research "Do retrieval-augmented generation models reduce factua
 2. **Lean JSON Schemas**: Pydantic models used for LLM constrained decoding should be flat and free of deep recursion or character/array length constraints to keep grammar compilation overhead low.
 3. **Immutability**: Domain models (`Paper`, `Chunk`, `EvidenceSpan`, `GraphNode`) are frozen. State transitions inside the orchestrator return fresh state objects via `model_copy(update=...)`.
 4. **Mechanical Grounding**: Never trust an LLM to quote evidence verbatim. Supporting and refuting evidence spans must always pass `locate_quote`.
+

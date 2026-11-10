@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel
 
 Vector = NDArray[np.float32]
+ModelTier = Literal["fast", "reasoning"]
 
 
 class TokenUsage(BaseModel):
@@ -28,6 +29,8 @@ class StructuredResult[T: BaseModel]:
     usage: TokenUsage
     model: str
     attempts: int = 1
+    tier: ModelTier = "reasoning"
+    cost_usd: float = 0.0
 
 
 class LLMClient(Protocol):

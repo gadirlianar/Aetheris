@@ -14,6 +14,13 @@ _BADGE = {
     Verdict.NOT_ENOUGH_INFO: "NOT ENOUGH INFO",
 }
 
+_CONSENSUS_LABEL = {
+    "strong_consensus_support": "STRONG CONSENSUS SUPPORT",
+    "qualified_consensus": "QUALIFIED CONSENSUS (BOUNDARY-DEPENDENT)",
+    "contested_methodology": "CONTESTED METHODOLOGY",
+    "counter_evidence_prevails": "COUNTER-EVIDENCE PREVAILS",
+}
+
 
 @dataclass(frozen=True)
 class VerificationMetrics:
@@ -26,8 +33,10 @@ class VerificationMetrics:
     grounding_failures: int
     invalid_citations: int
     skeptic_rounds: int = 0
+    conflicts_resolved: int = 0
     graph_nodes: int = 0
     graph_edges: int = 0
+    total_cost_usd: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -43,9 +52,9 @@ def compute_metrics(state: ResearchState) -> VerificationMetrics:
     cit_acc = (
         sum(bool(c.decisive_evidence_cited) for c in decided) / len(decided) if decided else 0.0
     )
-    inv = (
-        sum(len(s.invalid_citations) for s in state.draft.iter_sentences()) if state.draft else 0
-    )
+    inv = sum(len(s.invalid_citations) for s in state.draft.iter_sentences()) if state.draft else 0
+    raw_cost = state.cost_telemetry.get("total_cost_usd", 0.0)
+    cost_usd = float(raw_cost) if isinstance(raw_cost, int | float) else 0.0
     return VerificationMetrics(
         total_claims=n,
         supported=sup,
@@ -56,8 +65,10 @@ def compute_metrics(state: ResearchState) -> VerificationMetrics:
         grounding_failures=sum(c.grounding_failed for c in claims),
         invalid_citations=inv,
         skeptic_rounds=state.skeptic_rounds,
+        conflicts_resolved=len(state.conflicts),
         graph_nodes=len(state.knowledge_graph.nodes),
         graph_edges=len(state.knowledge_graph.edges),
+        total_cost_usd=cost_usd,
     )
 
 
@@ -79,6 +90,10 @@ def render_markdown(state: ResearchState) -> str:
     for c in state.claims:
         for span in c.evidence:
             ref(span.paper_id)
+    for cf in state.conflicts:
+        for src in [*cf.supporting_sources, *cf.counter_sources]:
+            if src.paper_id in state.papers:
+                ref(src.paper_id)
 
     m = compute_metrics(state)
     lines = [
@@ -89,7 +104,8 @@ def render_markdown(state: ResearchState) -> str:
         f"> **Verification summary:** {m.supported}/{m.total_claims} claims supported "
         f"({m.support_rate:.0%}), {m.refuted} refuted, {m.not_enough_info} insufficient evidence · "
         f"citation accuracy {m.citation_accuracy:.0%} · {len(bib)} sources cited "
-        f"({len(state.papers)} retrieved) · {m.skeptic_rounds} skeptic audit round(s)",
+        f"({len(state.papers)} retrieved) · {m.skeptic_rounds} skeptic audit round(s) · "
+        f"{m.conflicts_resolved} disagreement resolution(s)",
         "",
     ]
 
@@ -109,13 +125,40 @@ def render_markdown(state: ResearchState) -> str:
                     p = state.papers.get(span.paper_id)
                     who = p.short_citation() if p else span.paper_id
                     lines.append(
-                        f'    - [{ref(span.paper_id)}] ({who}, chars '
+                        f"    - [{ref(span.paper_id)}] ({who}, chars "
                         f'{span.char_start}–{span.char_end}, {span.match}): "{span.quote}"'
                     )
                 if verdict is not Verdict.SUPPORTED and claim.rationale:
                     lines.append(f"    - Verifier note: {claim.rationale}")
                 if claim.skeptic_notes:
                     lines.append(f"    - Skeptic critique: {claim.skeptic_notes}")
+        lines.append("")
+
+    if state.conflicts:
+        lines += ["## Scientific Disagreement & Consensus Analysis", ""]
+        for cf in state.conflicts:
+            badge = _CONSENSUS_LABEL.get(cf.consensus_verdict, cf.consensus_verdict.upper())
+            lines.append(
+                f"- **[{cf.id}] {cf.topic}** — `{badge}` "
+                f"(Support Authority $W={cf.support_authority_weight:.2f}$ vs. "
+                f"Counter Authority $W={cf.counter_authority_weight:.2f}$, "
+                f"Citation Ratio {cf.citation_ratio:.2f}x, $\\Delta t={cf.recency_gap_years}$y)"
+            )
+            for src in cf.supporting_sources:
+                r_idx = ref(src.paper_id) if src.paper_id in state.papers else "?"
+                lines.append(
+                    f"  - *Primary / Supporting* [{r_idx}] {src.citation_label} "
+                    f"({src.venue or 'preprint'}, {src.citation_count} citations, "
+                    f'authority={src.authority_score:.2f}): "{src.quote}"'
+                )
+            for src in cf.counter_sources:
+                r_idx = ref(src.paper_id) if src.paper_id in state.papers else "?"
+                lines.append(
+                    f"  - *Qualifying / Counter* [{r_idx}] {src.citation_label} "
+                    f"({src.venue or 'preprint'}, {src.citation_count} citations, "
+                    f'authority={src.authority_score:.2f}): "{src.quote}"'
+                )
+            lines.append(f"  - **Consensus Resolution:** {cf.synthesis}")
         lines.append("")
 
     if state.skeptic_history:
@@ -143,5 +186,6 @@ def _format_reference(num: int, paper: Paper) -> str:
 
 class ReportRenderer:
     async def run(self, state: ResearchState, ctx: ResearchContext) -> ResearchState:
-        del ctx
-        return state.model_copy(update={"report_markdown": render_markdown(state)})
+        telemetry = ctx.llm.budget.telemetry_summary()
+        updated = state.model_copy(update={"cost_telemetry": telemetry})
+        return updated.model_copy(update={"report_markdown": render_markdown(updated)})

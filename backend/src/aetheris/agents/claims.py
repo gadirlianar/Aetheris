@@ -57,6 +57,7 @@ class ClaimExtractor:
             ),
             schema=ClaimsOut,
             purpose="extract_claims",
+            tier="fast",
         )
         per_sentence: dict[str, int] = {}
         out: list[tuple[str, str]] = []

@@ -111,6 +111,7 @@ class Engine:
             duration_ms=round((time.perf_counter() - started) * 1000),
             llm_calls=self._budget.llm_calls,
             total_tokens=self._budget.total_tokens,
+            cost_usd=round(self._budget.total_cost_usd, 6),
         )
         return result
 
@@ -137,10 +138,12 @@ class Engine:
                     await self._sleep(delay)
                     attempt += 1
                     continue
+                node_ms = round((time.perf_counter() - started) * 1000, 2)
+                self._budget.record_node_latency(spec.name, node_ms)
                 await self._events.emit(
                     EventType.NODE_COMPLETED,
                     attempt=attempt,
-                    duration_ms=round((time.perf_counter() - started) * 1000),
+                    duration_ms=round(node_ms),
                     snapshot=new_state.model_dump(mode="json") if self._snapshots else None,
                 )
                 return new_state

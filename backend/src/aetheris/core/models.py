@@ -10,13 +10,19 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 SourceName = Literal["arxiv", "openalex", "semantic_scholar"]
 RetrievalMode = Literal["dense", "bm25", "hybrid", "graph_hybrid"]
 NodeKind = Literal["paper", "chunk", "entity"]
+ConsensusVerdict = Literal[
+    "strong_consensus_support",
+    "qualified_consensus",
+    "contested_methodology",
+    "counter_evidence_prevails",
+]
 
 
 class _Frozen(BaseModel):
@@ -198,6 +204,38 @@ class SkepticCritique(BaseModel):
     counter_queries: list[str] = Field(default_factory=list)
 
 
+# ------------------------------------------------------------------ contradiction & consensus
+
+
+class WeightedEvidenceSource(_Frozen):
+    """A source paper weighted by citation count, recency, and venue authority."""
+
+    paper_id: str
+    citation_label: str
+    stance: Literal["supports", "refutes", "qualifies"]
+    year: int | None = None
+    citation_count: int = 0
+    venue: str | None = None
+    authority_score: float = Field(ge=0.0, le=1.0)
+    quote: str
+
+
+class ConflictResolution(BaseModel):
+    """Structured analysis of competing or boundary-qualified findings across retrieved papers."""
+
+    id: str
+    topic: str
+    claim_ids: list[str] = Field(default_factory=list)
+    supporting_sources: list[WeightedEvidenceSource] = Field(default_factory=list)
+    counter_sources: list[WeightedEvidenceSource] = Field(default_factory=list)
+    support_authority_weight: float = 0.0
+    counter_authority_weight: float = 0.0
+    recency_gap_years: int = 0
+    citation_ratio: float = 1.0
+    consensus_verdict: ConsensusVerdict = "qualified_consensus"
+    synthesis: str
+
+
 # --------------------------------------------------------------------------- run state
 
 
@@ -216,6 +254,8 @@ class ResearchState(BaseModel):
     claims: list[Claim] = Field(default_factory=list)
     skeptic_rounds: int = 0
     skeptic_history: list[SkepticCritique] = Field(default_factory=list)
+    conflicts: list[ConflictResolution] = Field(default_factory=list)
+    cost_telemetry: dict[str, Any] = Field(default_factory=dict)
     report_markdown: str | None = None
 
     def claims_for(self, sentence_id: str) -> list[Claim]:

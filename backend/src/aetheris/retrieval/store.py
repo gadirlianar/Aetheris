@@ -41,10 +41,14 @@ class EvidenceStore:
         *,
         candidate_pool: int = 50,
         mode: RetrievalMode = "graph_hybrid",
+        sentences_per_chunk: int = 1,
+        stride: int = 1,
     ) -> None:
         self._embedder = embedder
         self._candidate_pool = candidate_pool
         self._mode: RetrievalMode = mode
+        self._sentences_per_chunk = sentences_per_chunk
+        self._stride = stride
         self._chunks: list[Chunk] = []
         self._ids: dict[str, int] = {}
         self._papers: dict[str, Paper] = {}
@@ -86,16 +90,19 @@ class EvidenceStore:
             for paper in papers:
                 self._papers[paper.id] = paper
                 self._titles[paper.id] = paper.title
-                new.extend(c for c in chunk_paper(paper) if c.id not in self._ids)
+                paper_chunks = chunk_paper(
+                    paper,
+                    sentences_per_chunk=self._sentences_per_chunk,
+                    stride=self._stride,
+                )
+                new.extend(c for c in paper_chunks if c.id not in self._ids)
             if not new:
                 return []
-            vectors = await self._embedder.embed_documents(
-                [(self._titles[c.paper_id], c.text) for c in new]
-            )
+            vectors = await self._embedder.embed_documents([("", c.text) for c in new])
             for chunk in new:
                 self._ids[chunk.id] = len(self._chunks)
                 self._chunks.append(chunk)
-                self._tokens.append(tokenize(f"{self._titles[chunk.paper_id]} {chunk.text}"))
+                self._tokens.append(tokenize(chunk.text))
             self._vectors = np.vstack([self._vectors, vectors])
             self._bm25 = BM25Index(self._tokens)
             self._kg.add_chunks(new, self._papers)

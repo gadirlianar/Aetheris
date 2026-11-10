@@ -1,4 +1,4 @@
-"""FastAPI server with REST endpoints and Server-Sent Events (SSE) for live agent runs."""
+"""FastAPI server with REST endpoints, deterministic replay, and SSE streaming."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from aetheris.demo import DEMO_PAPERS, PRESET_QUESTIONS, DemoLLM, DemoSource
 from aetheris.evals.metrics import BenchmarkSummary
 from aetheris.evals.runner import format_ablation_markdown, run_ablation_suite
 from aetheris.llm.hashing import HashingEmbedder
-from aetheris.pipeline import build_research_graph, run_research
+from aetheris.pipeline import build_research_graph, replay_research, run_research
 from aetheris.tracing.store import TraceStore
 
 
@@ -32,6 +32,11 @@ class CreateRunRequest(BaseModel):
     mode: Literal["auto", "demo", "live"] = "auto"
     retrieval_mode: RetrievalMode = "graph_hybrid"
     max_skeptic_rounds: int = Field(default=1, ge=0, le=3)
+
+
+class ReplayRunRequest(BaseModel):
+    from_node: str = "verify"
+    mode: Literal["auto", "demo", "live"] = "auto"
 
 
 class EvalResponse(BaseModel):
@@ -114,6 +119,7 @@ def _build_run_payload(
         "finished_at": (row or {}).get("finished_at"),
         "llm_calls": (row or {}).get("llm_calls", 0),
         "total_tokens": (row or {}).get("total_tokens", 0),
+        "cost_usd": (row or {}).get("cost_usd", metrics.get("total_cost_usd", 0.0)),
         "duration_ms": (row or {}).get("duration_ms", 0),
         "error": (row or {}).get("error"),
         "metrics": metrics,
@@ -167,6 +173,8 @@ def create_app(settings: Settings | None = None, *, seed_demo: bool = True) -> F
             "version": __version__,
             "live_llm_configured": s.gemini_api_key is not None,
             "llm_model": s.llm_model,
+            "fast_model": s.fast_model,
+            "reasoning_model": s.reasoning_model,
             "embedding_model": s.embedding_model,
             "retrieval_mode": s.retrieval_mode,
             "graph_mermaid": build_research_graph().to_mermaid(),
@@ -233,6 +241,39 @@ def create_app(settings: Settings | None = None, *, seed_demo: bool = True) -> F
         run_id = uuid.uuid4().hex[:12]
         return await _execute_run(app_state, run_id, req, use_demo=use_demo)
 
+    @app.post("/api/runs/{run_id}/replay")
+    async def replay_run_endpoint(run_id: str, req: ReplayRunRequest) -> dict[str, Any]:
+        use_demo = req.mode == "demo" or (
+            req.mode == "auto" and app_state.settings.gemini_api_key is None
+        )
+        store = app_state.open_store()
+        try:
+            try:
+                result = await replay_research(
+                    run_id,
+                    from_node=req.from_node,
+                    trace_store=store,
+                    settings=app_state.settings,
+                    llm=DemoLLM(inject_initial_overclaim=False) if use_demo else None,
+                    embedder=HashingEmbedder(dim=512) if use_demo else None,
+                    sources=(
+                        (
+                            DemoSource(DEMO_PAPERS[:5], name="arxiv"),
+                            DemoSource(DEMO_PAPERS[3:], name="openalex"),
+                        )
+                        if use_demo
+                        else None
+                    ),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            new_rid = result.state.run_id
+            row = store.get_run(new_rid)
+            events = [e.model_dump(mode="json") for e in store.get_events(new_rid)]
+        finally:
+            store.close()
+        return _build_run_payload(row, result.state, events)
+
     @app.get("/api/runs/{run_id}/stream")
     async def stream_run(run_id: str) -> StreamingResponse:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
@@ -290,4 +331,3 @@ def create_app(settings: Settings | None = None, *, seed_demo: bool = True) -> F
 
 
 app = create_app()
-

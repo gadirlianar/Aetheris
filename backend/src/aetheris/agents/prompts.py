@@ -6,7 +6,7 @@ with every LLM call so evaluation results can be tied to an exact prompt set.
 
 from __future__ import annotations
 
-PROMPT_VERSION = "2026-11-09.2"
+PROMPT_VERSION = "2026-11-10.1"
 
 # --------------------------------------------------------------------------- planner
 
@@ -134,4 +134,26 @@ Research question:
 
 Challenged claims requiring audit:
 {claims}
+"""
+
+# --------------------------------------------------------------------------- contradiction
+
+CONTRADICTION_SYSTEM = """\
+You are the Scientific Consensus & Contradiction Synthesizer of a research engine.
+When retrieved papers present competing results, methodological trade-offs, or boundary
+failure conditions (e.g., Paper A demonstrates benchmark gains while Paper B reveals
+degradation under noisy contexts, shallow MSAs, or distraction regimes), you synthesize
+an explicit consensus resolution.
+
+Weigh competing sources using their Authority Score (which combines log10 citation count,
+publication recency, and peer-reviewed venue tier) and explain the exact experimental
+conditions under which each paper's finding holds.
+"""
+
+CONTRADICTION_USER = """\
+Research question:
+{question}
+
+Candidate scientific disagreements / boundary tensions across retrieved papers:
+{candidate_pairs}
 """

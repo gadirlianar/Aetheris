@@ -1,4 +1,4 @@
-"""Tests for the SciFact-Aetheris evaluation suite, FastAPI endpoints, and CLI commands."""
+"""Tests for the 60-claim SciFact-Aetheris evaluation suite, FastAPI endpoints, and CLI commands."""
 
 from __future__ import annotations
 
@@ -31,17 +31,24 @@ async def test_ablation_suite_monotonic_gains() -> None:
     hybrid = by_name["hybrid_2way_rrf"]
     no_guard = by_name["no_grounding_guard"]
 
-    assert full.verdict_macro_f1 == 1.0
+    assert full.total_examples == 60
+    assert 0.80 <= full.verdict_macro_f1 <= 0.92
     assert full.verdict_macro_f1 > hybrid.verdict_macro_f1
     assert hybrid.verdict_macro_f1 > bm25.verdict_macro_f1 > dense.verdict_macro_f1
     assert full.verdict_macro_f1 > no_guard.verdict_macro_f1
-    assert full.hallucinations_caught == 2
+    assert full.hallucinations_caught == 5
     assert no_guard.hallucinations_caught == 0
     assert full.brier_score < no_guard.brier_score
 
+    # Verify 95% Bootstrap CIs, 3x3 Confusion Matrix, and Error Taxonomy
+    assert full.macro_f1_ci_95[0] < full.verdict_macro_f1 < full.macro_f1_ci_95[1]
+    assert sum(sum(row.values()) for row in full.confusion_matrix.values()) == 60
+    assert sum(full.error_taxonomy.values()) == sum(1 for p in full.predictions if not p.correct)
+
     md = format_ablation_markdown(summaries)
     assert "full_aetheris" in md
-    assert "100.0%" in md
+    assert "## Confusion Matrix" in md
+    assert "Error Taxonomy & Failure Mode Breakdown" in md
 
 
 async def test_fastapi_endpoints(tmp_path: Path) -> None:
@@ -71,6 +78,15 @@ async def test_fastapi_endpoints(tmp_path: Path) -> None:
         payload = sync_run.json()
         run_id = payload["run_id"]
         assert payload["metrics"]["support_rate"] == 1.0
+        assert payload["metrics"]["conflicts_resolved"] >= 1
+
+        replay_res = await client.post(
+            f"/api/runs/{run_id}/replay",
+            json={"from_node": "verify", "mode": "demo"},
+        )
+        assert replay_res.status_code == 200
+        assert replay_res.json()["status"] == "completed"
+        assert replay_res.json()["run_id"] != run_id
 
         runs_list = await client.get("/api/runs")
         assert runs_list.status_code == 200
@@ -90,14 +106,22 @@ async def test_fastapi_endpoints(tmp_path: Path) -> None:
 
 
 def test_cli_commands(tmp_path: Path, monkeypatch: object) -> None:
+    import pytest
+
+    mp = monkeypatch if isinstance(monkeypatch, pytest.MonkeyPatch) else None
+    if mp is not None:
+        mp.setenv("AETHERIS_DATA_DIR", str(tmp_path / "cli_data"))
+
     runner = CliRunner()
     out_md = tmp_path / "report.md"
+    replay_md = tmp_path / "replay_report.md"
     eval_md = tmp_path / "ablation.md"
     eval_json = tmp_path / "ablation.json"
 
     res_graph = runner.invoke(cli_app, ["graph"])
     assert res_graph.exit_code == 0
     assert "flowchart TD" in res_graph.stdout
+    assert "contradiction" in res_graph.stdout
 
     res_eval = runner.invoke(cli_app, ["eval", "-o", str(eval_md), "--json", str(eval_json)])
     assert res_eval.exit_code == 0
@@ -116,4 +140,31 @@ def test_cli_commands(tmp_path: Path, monkeypatch: object) -> None:
     )
     assert res_research.exit_code == 0
     assert out_md.exists()
-    del monkeypatch
+
+    res_runs = runner.invoke(cli_app, ["runs"])
+    assert res_runs.exit_code == 0
+
+    store = Settings().trace_db
+    from aetheris.tracing.store import TraceStore
+
+    ts = TraceStore(store)
+    recorded_id = ts.list_runs(limit=1)[0]["run_id"]
+    ts.close()
+
+    res_inspect = runner.invoke(cli_app, ["inspect", recorded_id])
+    assert res_inspect.exit_code == 0
+
+    res_replay = runner.invoke(
+        cli_app,
+        [
+            "replay",
+            recorded_id,
+            "--from-node",
+            "verify",
+            "--demo",
+            "-o",
+            str(replay_md),
+        ],
+    )
+    assert res_replay.exit_code == 0
+    assert replay_md.exists()

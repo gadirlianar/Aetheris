@@ -1,4 +1,4 @@
-"""Command-line interface (`aetheris research`, `aetheris eval`, `aetheris serve`)."""
+"""CLI (`aetheris research`, `aetheris replay`, `aetheris eval`, `aetheris serve`)."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from aetheris.demo import DEMO_PAPERS, DemoLLM, DemoSource
 from aetheris.evals.runner import format_ablation_markdown, run_ablation_suite
 from aetheris.llm.hashing import HashingEmbedder
 from aetheris.orchestrator.engine import RunStatus
-from aetheris.pipeline import build_research_graph, run_research
+from aetheris.pipeline import build_research_graph, replay_research, run_research
 from aetheris.tracing.store import TraceStore
 
 app = typer.Typer(
@@ -98,9 +98,7 @@ def research(
             )
         else:
             result = asyncio.run(
-                run_research(
-                    question, settings=settings, trace_store=store, on_event=_live_printer
-                )
+                run_research(question, settings=settings, trace_store=store, on_event=_live_printer)
             )
     finally:
         store.close()
@@ -122,8 +120,99 @@ def research(
             f"[green]{m.supported} supported[/], [red]{m.refuted} refuted[/], "
             f"[yellow]{m.not_enough_info} NEI[/] · "
             f"citation accuracy [bold]{m.citation_accuracy:.0%}[/] · "
-            f"skeptic rounds [bold]{m.skeptic_rounds}[/] · saved to {saved}",
+            f"skeptic rounds [bold]{m.skeptic_rounds}[/] · "
+            f"conflicts [bold]{m.conflicts_resolved}[/] · "
+            f"cost [bold]${m.total_cost_usd:.5f}[/] · saved to {saved}",
             border_style="green",
+        )
+    )
+    stdout.print(Markdown(result.state.report_markdown))
+
+
+@app.command("replay")
+def replay(
+    run_id: Annotated[str, typer.Argument(help="Existing run_id to resume or fork from disk.")],
+    from_node: Annotated[
+        str,
+        typer.Option(
+            "--from-node",
+            help=(
+                "Graph node to resume from (plan, retrieve, synthesize, "
+                "extract_claims, verify, skeptic, contradiction, render)."
+            ),
+        ),
+    ] = "verify",
+    output: Annotated[
+        Path | None,
+        typer.Option("-o", "--output", help="Write the replayed Markdown report to this file."),
+    ] = None,
+    demo: Annotated[
+        bool,
+        typer.Option(
+            "--demo",
+            help="Replay using the deterministic offline LLM and corpus.",
+        ),
+    ] = False,
+) -> None:
+    """Deterministically replay or fork a recorded research run from any checkpointed node."""
+    settings = Settings()
+    if not settings.trace_db.exists():
+        console.print(f"[bold red]Trace database not found at {settings.trace_db}[/]")
+        raise typer.Exit(code=1)
+
+    store = TraceStore(settings.trace_db)
+    try:
+        use_demo = demo or settings.gemini_api_key is None
+        if use_demo:
+            result = asyncio.run(
+                replay_research(
+                    run_id,
+                    from_node=from_node,
+                    trace_store=store,
+                    settings=settings,
+                    llm=DemoLLM(inject_initial_overclaim=False),
+                    embedder=HashingEmbedder(dim=512),
+                    sources=(
+                        DemoSource(DEMO_PAPERS[:5], name="arxiv"),
+                        DemoSource(DEMO_PAPERS[3:], name="openalex"),
+                    ),
+                    on_event=_live_printer,
+                )
+            )
+        else:
+            result = asyncio.run(
+                replay_research(
+                    run_id,
+                    from_node=from_node,
+                    trace_store=store,
+                    settings=settings,
+                    on_event=_live_printer,
+                )
+            )
+    except ValueError as exc:
+        console.print(f"[bold red]Replay error:[/] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        store.close()
+
+    if result.status is not RunStatus.COMPLETED or not result.state.report_markdown:
+        console.print(f"[bold red]Replay {result.status.value}:[/] {result.error}")
+        raise typer.Exit(code=1)
+
+    settings.runs_dir.mkdir(parents=True, exist_ok=True)
+    saved = settings.runs_dir / f"{result.state.run_id}.md"
+    saved.write_text(result.state.report_markdown, encoding="utf-8")
+    if output is not None:
+        output.write_text(result.state.report_markdown, encoding="utf-8")
+
+    m = compute_metrics(result.state)
+    console.print(
+        Panel.fit(
+            f"replayed [bold]{run_id}[/] -> [bold]{result.state.run_id}[/] "
+            f"(from [cyan]{from_node}[/], steps={len(result.steps)}) · "
+            f"[green]{m.supported} supported[/], [red]{m.refuted} refuted[/], "
+            f"[yellow]{m.not_enough_info} NEI[/] · saved to {saved}",
+            border_style="cyan",
         )
     )
     stdout.print(Markdown(result.state.report_markdown))
@@ -142,13 +231,13 @@ def run_eval(
 ) -> None:
     """Run the 5-way SciFact-Aetheris retrieval & verification ablation benchmark suite."""
     summaries = asyncio.run(run_ablation_suite())
-    table = Table(title="SciFact-Aetheris Ablation Study Results")
+    table = Table(title="SciFact-Aetheris Ablation Study Results (60 Claims, 1000x Bootstrap CIs)")
     for col in (
         "Configuration",
         "Retrieval",
         "Guard",
         "Verdict Acc",
-        "Macro-F1",
+        "Macro-F1 (95% CI)",
         "Recall@K",
         "MRR",
         "Span IoU",
@@ -159,12 +248,13 @@ def run_eval(
         table.add_column(col)
 
     for s in summaries:
+        ci_lo, ci_hi = s.macro_f1_ci_95
         table.add_row(
             s.config_name,
             s.retrieval_mode,
             "Yes" if s.grounding_guard else "No",
             f"{s.verdict_accuracy:.1%}",
-            f"{s.verdict_macro_f1:.1%}",
+            f"{s.verdict_macro_f1:.1%} [{ci_lo:.1%}, {ci_hi:.1%}]",
             f"{s.retrieval_recall_at_k:.1%}",
             f"{s.retrieval_mrr:.3f}",
             f"{s.mean_span_iou:.1%}",
@@ -207,14 +297,24 @@ def list_runs(limit: Annotated[int, typer.Option(help="Max rows.")] = 20) -> Non
     store.close()
 
     table = Table(title="Recorded runs")
-    for col in ("run_id", "status", "llm_calls", "total_tokens", "duration_ms", "question"):
+    for col in (
+        "run_id",
+        "status",
+        "llm_calls",
+        "total_tokens",
+        "cost_usd",
+        "duration_ms",
+        "question",
+    ):
         table.add_column(col)
     for r in rows:
+        cost = float(r.get("cost_usd") or 0.0)
         table.add_row(
             r["run_id"],
             r["status"],
             str(r["llm_calls"]),
             str(r["total_tokens"]),
+            f"${cost:.5f}",
             str(r["duration_ms"] or ""),
             (r["question"] or "")[:60],
         )

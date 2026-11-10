@@ -1,4 +1,4 @@
-"""Tokenisation, sentence segmentation and offset-preserving chunking."""
+"""Tokenisation, PDF/LaTeX-aware text normalization, sentence segmentation and chunking."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import re
 
 from aetheris.core.models import Chunk, Paper
 
-_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-'][a-z0-9]+)*")
+_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*")
+_LINEWRAP_RE = re.compile(r"(?<=[A-Za-z])-\s*\r?\n\s*(?=[a-z])")
+_LATEX_CMD_RE = re.compile(r"\\(?:textbf|textit|textrm|emph|mathrm|mathbf|text|cite[tp]?)\b")
 
 STOPWORDS = frozenset(
     {
@@ -174,8 +176,21 @@ _ABBREVIATIONS = frozenset(
 _BOUNDARY_RE = re.compile(r"[.!?][\"')\]]*\s+")
 
 
+def normalize_for_indexing(text: str) -> str:
+    """Repair PDF line-wrap hyphenations and strip LaTeX command wrappers for indexing.
+
+    Note: This is used only when extracting lexical tokens for BM25/dense indexing;
+    ``chunk_paper`` and ``split_sentences`` operate on the raw ``Paper.abstract`` so
+    that ``char_start`` and ``char_end`` offsets remain 100% exact.
+    """
+    repaired = _LINEWRAP_RE.sub("", text.replace("\u00ad", ""))
+    return _LATEX_CMD_RE.sub(" ", repaired)
+
+
 def tokenize(text: str, *, drop_stopwords: bool = True) -> list[str]:
-    tokens = _TOKEN_RE.findall(text.lower())
+    cleaned = normalize_for_indexing(text).lower()
+    raw_tokens = _TOKEN_RE.findall(cleaned)
+    tokens = [t.strip(".-") for t in raw_tokens if t.strip(".-")]
     if drop_stopwords:
         return [t for t in tokens if t not in STOPWORDS]
     return tokens
@@ -192,7 +207,7 @@ def split_sentences(text: str) -> list[tuple[int, int]]:
     for match in _BOUNDARY_RE.finditer(text):
         end = match.end()
         nxt = text[end : end + 1]
-        if not nxt or not (nxt.isupper() or nxt.isdigit() or nxt in "\"'([“"):
+        if not nxt or not (nxt.isupper() or nxt.isdigit() or nxt in "\"'([“$\\"):
             continue
         head = text[start : match.start()].rstrip()
         last_word = head.rsplit(None, 1)[-1].lower() if head else ""

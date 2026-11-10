@@ -1,10 +1,12 @@
-"""Evaluation metrics: Verdict Macro-F1, Retrieval Recall/MRR, Span IoU, Brier, and ECE."""
+"""Evaluation metrics: Macro-F1, 95% Bootstrap CIs, Confusion Matrix, Error Taxonomy, and ECE."""
 
 from __future__ import annotations
 
+import math
+import random
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aetheris.core.models import Verdict
 
@@ -28,6 +30,8 @@ class ExamplePrediction(BaseModel):
     example_id: str
     claim: str
     category: str
+    difficulty: str = "standard"
+    challenge_type: str = "direct_entailment"
     multi_hop: bool
     gold_verdict: Verdict
     pred_verdict: Verdict
@@ -38,6 +42,7 @@ class ExamplePrediction(BaseModel):
     span_iou: float = 0.0
     grounding_failed: bool = False
     correct: bool
+    error_category: str | None = None
 
 
 class BenchmarkSummary(BaseModel):
@@ -47,8 +52,13 @@ class BenchmarkSummary(BaseModel):
     grounding_guard: bool
     total_examples: int
     verdict_accuracy: float
+    accuracy_ci_95: tuple[float, float] = (0.0, 0.0)
     verdict_macro_f1: float
+    macro_f1_ci_95: tuple[float, float] = (0.0, 0.0)
     per_class: dict[str, ClassMetrics]
+    confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
+    error_taxonomy: dict[str, int] = Field(default_factory=dict)
+    per_challenge_accuracy: dict[str, float] = Field(default_factory=dict)
     retrieval_recall_at_k: float
     retrieval_mrr: float
     mean_span_iou: float
@@ -70,6 +80,78 @@ def span_iou(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _compute_macro_f1(preds: Sequence[ExamplePrediction]) -> float:
+    f1_scores: list[float] = []
+    for v in Verdict:
+        tp = sum(p.gold_verdict is v and p.pred_verdict is v for p in preds)
+        fp = sum(p.gold_verdict is not v and p.pred_verdict is v for p in preds)
+        fn = sum(p.gold_verdict is v and p.pred_verdict is not v for p in preds)
+        support = sum(p.gold_verdict is v for p in preds)
+        if support == 0:
+            continue
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) else 0.0
+        f1_scores.append(f1)
+    return sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
+
+
+def _percentile(sorted_vals: Sequence[float], q: float) -> float:
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return round(float(sorted_vals[0]), 4)
+    pos = (len(sorted_vals) - 1) * (q / 100.0)
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    if lo == hi:
+        return round(float(sorted_vals[lo]), 4)
+    w = pos - lo
+    return round(float(sorted_vals[lo] * (1.0 - w) + sorted_vals[hi] * w), 4)
+
+
+def bootstrap_confidence_intervals(
+    predictions: Sequence[ExamplePrediction],
+    *,
+    n_resamples: int = 1000,
+    seed: int = 42,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Compute 95% nonparametric bootstrap CIs for (Accuracy, Macro-F1)."""
+    n = len(predictions)
+    if n == 0:
+        return (0.0, 0.0), (0.0, 0.0)
+    rng = random.Random(seed)
+    acc_samples: list[float] = []
+    f1_samples: list[float] = []
+    pred_list = list(predictions)
+    for _ in range(n_resamples):
+        sample = [pred_list[rng.randrange(n)] for _ in range(n)]
+        acc_samples.append(sum(p.correct for p in sample) / n)
+        f1_samples.append(_compute_macro_f1(sample))
+    acc_samples.sort()
+    f1_samples.sort()
+    acc_ci = (_percentile(acc_samples, 2.5), _percentile(acc_samples, 97.5))
+    f1_ci = (_percentile(f1_samples, 2.5), _percentile(f1_samples, 97.5))
+    return acc_ci, f1_ci
+
+
+def classify_error_category(pred: ExamplePrediction, *, grounding_guard: bool) -> str | None:
+    """Assign a root-cause error taxonomy label when ``pred.correct`` is False."""
+    if pred.correct:
+        return None
+    if pred.gold_paper_id and pred.gold_paper_id not in pred.retrieved_paper_ids:
+        return "unretrieved_gold_evidence"
+    if not grounding_guard and pred.grounding_failed:
+        return "ungrounded_hallucination_accepted"
+    if pred.challenge_type == "numerical_threshold_trap":
+        return "numerical_threshold_mismatch"
+    if pred.challenge_type == "negation_antonym_reversal":
+        return "negation_polarity_reversal"
+    if pred.multi_hop or pred.challenge_type == "multi_hop_synthesis":
+        return "multi_hop_synthesis_gap"
+    return "scope_or_hedging_ambiguity"
+
+
 def compute_benchmark_summary(
     *,
     config_name: str,
@@ -83,16 +165,23 @@ def compute_benchmark_summary(
     if n == 0:
         raise ValueError("cannot compute summary over zero predictions")
 
-    correct_count = sum(p.correct for p in predictions)
+    enriched_preds = [
+        p.model_copy(
+            update={"error_category": classify_error_category(p, grounding_guard=grounding_guard)}
+        )
+        for p in predictions
+    ]
+
+    correct_count = sum(p.correct for p in enriched_preds)
     accuracy = correct_count / n
 
     per_class: dict[str, ClassMetrics] = {}
     f1_scores: list[float] = []
     for v in Verdict:
-        tp = sum(p.gold_verdict is v and p.pred_verdict is v for p in predictions)
-        fp = sum(p.gold_verdict is not v and p.pred_verdict is v for p in predictions)
-        fn = sum(p.gold_verdict is v and p.pred_verdict is not v for p in predictions)
-        support = sum(p.gold_verdict is v for p in predictions)
+        tp = sum(p.gold_verdict is v and p.pred_verdict is v for p in enriched_preds)
+        fp = sum(p.gold_verdict is not v and p.pred_verdict is v for p in enriched_preds)
+        fn = sum(p.gold_verdict is v and p.pred_verdict is not v for p in enriched_preds)
+        support = sum(p.gold_verdict is v for p in enriched_preds)
         prec = tp / (tp + fp) if (tp + fp) else 0.0
         rec = tp / (tp + fn) if (tp + fn) else 0.0
         f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) else 0.0
@@ -106,8 +195,35 @@ def compute_benchmark_summary(
             f1_scores.append(f1)
 
     macro_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
+    acc_ci, f1_ci = bootstrap_confidence_intervals(enriched_preds)
 
-    with_gold_paper = [p for p in predictions if p.gold_paper_id is not None]
+    # 3x3 Confusion Matrix: gold_verdict (row) -> pred_verdict (col)
+    confusion: dict[str, dict[str, int]] = {g.value: {p.value: 0 for p in Verdict} for g in Verdict}
+    for p in enriched_preds:
+        confusion[p.gold_verdict.value][p.pred_verdict.value] += 1
+
+    # Error Taxonomy breakdown
+    error_taxonomy: dict[str, int] = {
+        "unretrieved_gold_evidence": 0,
+        "ungrounded_hallucination_accepted": 0,
+        "numerical_threshold_mismatch": 0,
+        "negation_polarity_reversal": 0,
+        "multi_hop_synthesis_gap": 0,
+        "scope_or_hedging_ambiguity": 0,
+    }
+    for p in enriched_preds:
+        if p.error_category is not None:
+            error_taxonomy[p.error_category] = error_taxonomy.get(p.error_category, 0) + 1
+
+    # Per-challenge-type accuracy
+    challenge_groups: dict[str, list[bool]] = {}
+    for p in enriched_preds:
+        challenge_groups.setdefault(p.challenge_type, []).append(p.correct)
+    per_challenge_accuracy = {
+        ct: round(sum(vals) / len(vals), 4) for ct, vals in sorted(challenge_groups.items())
+    }
+
+    with_gold_paper = [p for p in enriched_preds if p.gold_paper_id is not None]
     hits = 0
     rr_sum = 0.0
     for p in with_gold_paper:
@@ -122,7 +238,7 @@ def compute_benchmark_summary(
     mean_iou = sum(iou_candidates) / len(iou_candidates) if iou_candidates else 0.0
 
     # Brier score & Expected Calibration Error (ECE)
-    brier = sum((p.confidence - (1.0 if p.correct else 0.0)) ** 2 for p in predictions) / n
+    brier = sum((p.confidence - (1.0 if p.correct else 0.0)) ** 2 for p in enriched_preds) / n
     bins: list[CalibrationBin] = []
     ece = 0.0
     for b_idx in range(num_bins):
@@ -130,7 +246,7 @@ def compute_benchmark_summary(
         high = round((b_idx + 1) / num_bins, 2)
         in_bin = [
             p
-            for p in predictions
+            for p in enriched_preds
             if (low <= p.confidence < high) or (b_idx == num_bins - 1 and p.confidence == high)
         ]
         if in_bin:
@@ -156,16 +272,21 @@ def compute_benchmark_summary(
         grounding_guard=grounding_guard,
         total_examples=n,
         verdict_accuracy=round(accuracy, 4),
+        accuracy_ci_95=acc_ci,
         verdict_macro_f1=round(macro_f1, 4),
+        macro_f1_ci_95=f1_ci,
         per_class=per_class,
+        confusion_matrix=confusion,
+        error_taxonomy=error_taxonomy,
+        per_challenge_accuracy=per_challenge_accuracy,
         retrieval_recall_at_k=round(recall_at_k, 4),
         retrieval_mrr=round(mrr, 4),
         mean_span_iou=round(mean_iou, 4),
         brier_score=round(brier, 4),
         ece=round(ece, 4),
         hallucinations_caught=(
-            sum(p.grounding_failed for p in predictions) if grounding_guard else 0
+            sum(p.grounding_failed for p in enriched_preds) if grounding_guard else 0
         ),
         calibration_bins=bins,
-        predictions=list(predictions),
+        predictions=enriched_preds,
     )

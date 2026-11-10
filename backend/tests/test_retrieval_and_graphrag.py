@@ -73,4 +73,3 @@ async def test_knowledge_graph_and_evidence_store_modes() -> None:
         )
         assert hits
         assert hits[0].chunk.paper_id == "s2:3f4e5d6c7b8a"
-

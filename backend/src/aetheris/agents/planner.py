@@ -18,6 +18,7 @@ class Planner:
             prompt=prompts.PLANNER_USER.format(question=state.question),
             schema=ResearchPlan,
             purpose="plan",
+            tier="fast",
         )
         plan = _enforce_bounds(result.value, s.max_sub_questions, s.max_queries_per_sub_question)
         await ctx.events.emit(

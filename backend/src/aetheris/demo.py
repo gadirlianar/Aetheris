@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from aetheris.agents.claims import ClaimsOut, _ClaimOut
+from aetheris.agents.contradiction import ContradictionOut, _ConflictSynthesisItem
 from aetheris.agents.skeptic import SkepticOut, _IssueOut
 from aetheris.agents.synthesizer import DraftOut, _SectionOut, _SentenceOut
 from aetheris.agents.verifier import VerificationOut, _QuoteOut
@@ -335,6 +336,8 @@ class DemoLLM:
             produced = self._verify(prompt)
         elif schema is SkepticOut:
             produced = self._skeptic(prompt)
+        elif schema is ContradictionOut:
+            produced = self._contradiction(prompt)
         else:
             raise TypeError(f"DemoLLM does not support schema {schema.__name__}")
 
@@ -520,3 +523,32 @@ class DemoLLM:
             ),
             issues=issues,
         )
+
+    def _contradiction(self, prompt: str) -> ContradictionOut:
+        pair_ids = re.findall(r"^\[(cf-\d+)\]", prompt, flags=re.MULTILINE)
+        resolutions: list[_ConflictSynthesisItem] = []
+        for idx, pid in enumerate(pair_ids):
+            topic = (
+                "Clean Benchmark RAG Gains vs. Noisy-Context Citation Unfaithfulness"
+                if idx == 0
+                else f"Methodological Regime & Boundary Qualification ({pid})"
+            )
+            resolutions.append(
+                _ConflictSynthesisItem(
+                    pair_id=pid,
+                    topic=topic,
+                    consensus_verdict="qualified_consensus",
+                    synthesis=(
+                        "Weighted bibliographic authority reconciles both findings as "
+                        "regime-dependent rather than mutually exclusive: high-citation "
+                        "foundational work establishes a 42% reduction in open-domain "
+                        "hallucinations when gold passages are retrieved, whereas recent "
+                        "TACL/ACL studies demonstrate that topically similar distraction "
+                        "passages raise unfaithful synthesis claims to 27.4% and cause up "
+                        "to 31% of inline citations to fail strict entailment unless "
+                        "mechanical quote grounding and adversarial Skeptic verification "
+                        "are enforced."
+                    ),
+                )
+            )
+        return ContradictionOut(resolutions=resolutions)

@@ -108,6 +108,67 @@ export interface SkepticCritique {
   counter_queries: string[];
 }
 
+export interface WeightedEvidenceSource {
+  paper_id: string;
+  citation_label: string;
+  stance: "supports" | "refutes" | "qualifies";
+  year: number | null;
+  citation_count: number | null;
+  venue: string | null;
+  authority_score: number;
+  quote: string;
+}
+
+export interface ConflictResolution {
+  id: string;
+  topic: string;
+  claim_ids: string[];
+  supporting_sources: WeightedEvidenceSource[];
+  counter_sources: WeightedEvidenceSource[];
+  support_authority_weight: number;
+  counter_authority_weight: number;
+  recency_gap_years: number;
+  citation_ratio: number;
+  consensus_verdict:
+    | "support_dominant"
+    | "refute_dominant"
+    | "qualified_consensus";
+  synthesis: string;
+}
+
+export interface LatencyPercentiles {
+  count: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  mean_ms: number;
+  max_ms?: number;
+}
+
+export interface TierUsageSummary {
+  calls: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface CostTelemetry {
+  llm_calls: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  elapsed_s?: number;
+  llm_latency: LatencyPercentiles;
+  node_latencies: Record<string, LatencyPercentiles>;
+  tier_usage: Record<string, TierUsageSummary>;
+}
+
 export interface ResearchState {
   run_id: string;
   question: string;
@@ -121,6 +182,8 @@ export interface ResearchState {
   claims: Claim[];
   skeptic_rounds: number;
   skeptic_history: SkepticCritique[];
+  conflicts?: ConflictResolution[];
+  cost_telemetry?: CostTelemetry;
   report_markdown: string | null;
 }
 
@@ -134,6 +197,8 @@ export interface VerificationMetrics {
   grounding_failures: number;
   invalid_citations: number;
   skeptic_rounds: number;
+  conflicts_resolved?: number;
+  total_cost_usd?: number;
   graph_nodes: number;
   graph_edges: number;
 }
@@ -145,6 +210,7 @@ export interface RunEvent {
   type: string;
   node: string | null;
   data: Record<string, unknown>;
+  snapshot?: Record<string, unknown> | null;
 }
 
 export interface RunPayload {
@@ -155,6 +221,7 @@ export interface RunPayload {
   finished_at?: string;
   llm_calls: number;
   total_tokens: number;
+  cost_usd?: number;
   duration_ms: number;
   error?: string | null;
   metrics: VerificationMetrics;
@@ -181,6 +248,8 @@ export interface ExamplePrediction {
   example_id: string;
   claim: string;
   category: string;
+  difficulty?: string;
+  challenge_type?: string;
   multi_hop: boolean;
   gold_verdict: Verdict;
   pred_verdict: Verdict;
@@ -191,6 +260,8 @@ export interface ExamplePrediction {
   span_iou: number;
   grounding_failed: boolean;
   correct: boolean;
+  error_category?: string | null;
+  error_bucket?: string | null;
 }
 
 export interface BenchmarkSummary {
@@ -200,11 +271,16 @@ export interface BenchmarkSummary {
   grounding_guard: boolean;
   total_examples: number;
   verdict_accuracy: number;
+  accuracy_ci_95?: [number, number];
   verdict_macro_f1: number;
+  macro_f1_ci_95?: [number, number];
   per_class: Record<
     string,
     { precision: number; recall: number; f1: number; support: number }
   >;
+  confusion_matrix?: Record<string, Record<string, number>>;
+  error_taxonomy?: Record<string, number>;
+  per_challenge_accuracy?: Record<string, number>;
   retrieval_recall_at_k: number;
   retrieval_mrr: number;
   mean_span_iou: number;
@@ -214,4 +290,3 @@ export interface BenchmarkSummary {
   calibration_bins: CalibrationBin[];
   predictions: ExamplePrediction[];
 }
-

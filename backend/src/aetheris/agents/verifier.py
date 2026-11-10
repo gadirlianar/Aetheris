@@ -1,14 +1,18 @@
-"""Verifier: independently judge every claim against retrieved evidence.
+"""Verifier: independently judge every claim against retrieved evidence in parallel batches.
 
 Design principles:
-  * isolation  – the verifier never sees the draft, only the claim and evidence,
-                 so it cannot be anchored by the writer's framing;
+  * isolation       – the verifier never sees the draft, only the claim and evidence,
+                      so it cannot be anchored by the writer's framing;
+  * bounded parallelism & rate limiting – claims are verified concurrently in batches
+                      governed by ``asyncio.Semaphore(ctx.settings.max_concurrent_claims)``
+                      and a ``TokenBucketRateLimiter``, preventing sequential latency
+                      blowups on long reports while respecting upstream quota limits;
   * augmented evidence – besides the chunks the writer cited, fresh hybrid/GraphRAG
-                 search results for the claim are included, which lets the verifier
-                 find support the writer missed *and* detect mis-citations;
+                      search results for the claim are included, which lets the verifier
+                      find support the writer missed *and* detect mis-citations;
   * mechanical grounding – a verdict stands only if at least one of its quotes is
-                 found in the evidence (see ``grounding.py``), unless disabled for
-                 ablation benchmarking.
+                      found in the evidence (see ``grounding.py``), unless disabled for
+                      ablation benchmarking.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from aetheris.agents.evidence import format_evidence
 from aetheris.agents.grounding import locate_quote
 from aetheris.core.events import EventType
 from aetheris.core.models import Chunk, Claim, EvidenceSpan, ResearchState, Verdict
+from aetheris.llm.client import TokenBucketRateLimiter
 
 
 class _QuoteOut(BaseModel):
@@ -50,9 +55,14 @@ class Verifier:
             k=ctx.settings.evidence_per_claim,
             mode=ctx.settings.retrieval_mode,
         )
-        semaphore = asyncio.Semaphore(ctx.settings.llm_concurrency)
+        max_concurrent = max(1, ctx.settings.max_concurrent_claims)
+        semaphore = asyncio.Semaphore(max_concurrent)
+        limiter = TokenBucketRateLimiter(
+            rate_per_sec=ctx.settings.rate_limit_rps,
+            capacity=ctx.settings.rate_limit_burst,
+        )
 
-        async def verify(claim: Claim, hits: list[Chunk]) -> Claim:
+        async def verify_with_limits(claim: Claim, hits: list[Chunk]) -> Claim:
             sentence = state.draft.sentence(claim.sentence_id) if state.draft else None
             cited = [
                 ctx.evidence.get(cid)
@@ -61,24 +71,32 @@ class Verifier:
             ]
             candidates = list({c.id: c for c in [*cited, *hits]}.values())
             async with semaphore:
+                await limiter.acquire(1.0)
                 return await self._verify_one(claim, candidates, {c.id for c in cited}, state, ctx)
 
-        verified = await asyncio.gather(
-            *(
-                verify(claim, [h.chunk for h in hits])
-                for claim, hits in zip(state.claims, searches, strict=True)
-            )
-        )
+        # Process claims in concurrent batches while preserving deterministic claim order
+        pairs = [
+            (claim, [h.chunk for h in hits])
+            for claim, hits in zip(state.claims, searches, strict=True)
+        ]
+        batch_size = max(max_concurrent * 2, 10)
+        verified: list[Claim] = []
+        for offset in range(0, len(pairs), batch_size):
+            batch = pairs[offset : offset + batch_size]
+            batch_results = await asyncio.gather(*(verify_with_limits(c, h) for c, h in batch))
+            verified.extend(batch_results)
+
         counts = {v.value: sum(c.verdict is v for c in verified) for v in Verdict}
+        msg = (
+            f"verified {len(verified)} claims (concurrency={max_concurrent}): "
+            f"{counts['supported']} supported, {counts['refuted']} refuted, "
+            f"{counts['not_enough_info']} not enough info"
+        )
         await ctx.events.emit(
             EventType.PROGRESS,
-            message="verified {n} claims: {s} supported, {r} refuted, {u} not enough info".format(
-                n=len(verified),
-                s=counts["supported"],
-                r=counts["refuted"],
-                u=counts["not_enough_info"],
-            ),
+            message=msg,
             verdicts=counts,
+            concurrency=max_concurrent,
             grounding_failures=sum(c.grounding_failed for c in verified),
         )
         return state.model_copy(update={"claims": verified})
@@ -106,6 +124,7 @@ class Verifier:
             prompt=prompts.VERIFIER_USER.format(claim=claim.text, evidence=block.text),
             schema=VerificationOut,
             purpose="verify",
+            tier="reasoning",
         )
         out = result.value
         by_id = {c.id: c for c in candidates}
